@@ -322,9 +322,17 @@ class ScanView:  UIView {
     lazy var contentView = UIView(frame:  CGRect(x:  scanBorderX, y:  scanBorderY, width:  scanBorderWidth, height: scanBorderHeight))
     // 提示文字
     public lazy var tips = ""
+    
+    private lazy var imageView: UIImageView = {
+        let imageView = UIImageView(image:  self.scanAnimationImage.changeColor(self.cornerColor))
+        return imageView
+    }()
     override public init(frame:  CGRect) {
         super.init(frame:  frame)
         backgroundColor = .clear
+        contentView.backgroundColor = .clear
+        contentView.clipsToBounds = true
+        addSubview(contentView)
     }
     required init?(coder aDecoder:  NSCoder) {
         fatalError("init(coder: ) has not been implemented")
@@ -332,19 +340,15 @@ class ScanView:  UIView {
     override public func draw(_ rect:  CGRect) {
         super.draw(rect)
         drawScan(rect)
-        var rect: CGRect?
-        let imageView = UIImageView(image:  scanAnimationImage.changeColor(cornerColor))
-        if scanAnimationStyle == .default {
-            rect = CGRect(x:  0 , y:  -(12 + 20), width:  scanBorderWidth , height:  12)
-        }else{
-            rect = CGRect(x:  0, y:  -(scanBorderHeight + 20), width:  scanBorderWidth, height: scanBorderHeight)
-        }
-        contentView.backgroundColor = .clear
-        contentView.clipsToBounds = true
-        addSubview(contentView)
-        
-        ScanAnimation.shared.startWith(rect!, contentView, imageView:  imageView)
         setupTips()
+    }
+    
+    func startAnimation() {
+        let rect = CGRect(x:  0, y:  0, width:  scanBorderWidth, height: scanBorderHeight)
+        ScanAnimation.shared.startWith(rect, contentView, imageView:  imageView)
+    }
+    func stopAnimation() {
+        ScanAnimation.shared.stopStepAnimating()
     }
 }
 // MARK:  - CustomMethod
@@ -361,12 +365,6 @@ extension ScanView{
         addSubview(tipsLbl)
         tipsLbl.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([tipsLbl.centerXAnchor.constraint(equalTo:  self.centerXAnchor),tipsLbl.topAnchor.constraint(equalTo:  contentView.bottomAnchor, constant:  20),tipsLbl.widthAnchor.constraint(equalToConstant:  UIScreen.main.bounds.width),tipsLbl.heightAnchor.constraint(equalToConstant:  14)])
-    }
-    func startAnimation() {
-        ScanAnimation.shared.startAnimation()
-    }
-    func stopAnimation() {
-        ScanAnimation.shared.stopAnimation()
     }
     /// 绘制扫码效果
     func drawScan(_ rect:  CGRect) {
@@ -472,34 +470,48 @@ class ScanAnimation: NSObject{
         return instance
     }()
     lazy var animationImageView = UIImageView()
-    var displayLink: CADisplayLink?
     var tempFrame: CGRect?
-    var contentHeight: CGFloat?
+    var isAnimationing = false
+    
     func startWith(_ rect: CGRect, _ parentView: UIView, imageView: UIImageView) {
         tempFrame = rect
         imageView.frame = tempFrame ?? CGRect.zero
         animationImageView = imageView
-        contentHeight = parentView.bounds.height
         parentView.addSubview(imageView)
-        setupDisplayLink()
+        isAnimationing = true
+        if imageView.image != nil {
+            animation()
+        }
     }
     @objc func animation() {
-        if animationImageView.frame.maxY > contentHeight! + 20 {
-            animationImageView.frame = tempFrame ?? CGRect.zero
+        guard isAnimationing else {
+            return
         }
-        animationImageView.transform = CGAffineTransform(translationX:  0, y:  2).concatenating(animationImageView.transform)
+        var frame = tempFrame
+        let hImg = animationImageView.image!.size.height * frame!.size.width / animationImageView.image!.size.width
+        frame?.origin.y -= hImg
+        frame?.size.height = hImg
+        self.animationImageView.frame = frame ?? CGRect.zero
+        self.animationImageView.alpha = 0.0
+        
+        UIView.animate(withDuration: 1.4, animations: {
+            self.animationImageView.alpha = 1.0
+            var frame = self.tempFrame!
+            let hImg = self.animationImageView.frame.size.height * self.tempFrame!.size.width / self.animationImageView.frame.size.width
+            frame.origin.y += (frame.size.height - hImg)
+            frame.size.height = hImg
+            self.animationImageView.frame = frame
+        }, completion: { _ in
+            self.perform(#selector(ScanAnimation.animation), with: nil, afterDelay: 0.3)
+        })
     }
-    func setupDisplayLink() {
-        displayLink = CADisplayLink(target:  self, selector:  #selector(animation))
-        displayLink?.add(to:  .current, forMode:  .common)
-        displayLink?.isPaused = true
+
+    func stopStepAnimating() {
+        self.animationImageView.isHidden = true
+        isAnimationing = false
     }
-    func startAnimation() {
-        displayLink?.isPaused = false
-    }
-    func stopAnimation() {
-        displayLink?.invalidate()
-        displayLink = nil
+    deinit {
+        stopStepAnimating()
     }
 }
 
